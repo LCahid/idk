@@ -1,6 +1,7 @@
 package socketstream
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -46,14 +47,13 @@ func NewWSConfig(addr string, db dbClient) (*wsClient, error) {
 	}, nil
 }
 
-func (ws *wsClient) Start(wg *sync.WaitGroup) {
+func (ws *wsClient) Start(ctx context.Context, wg *sync.WaitGroup) {
 	go func() {
 		defer ws.client.Close()
-		wg.Add(1)
 		defer wg.Done()
 		for i := 0; true; i++{
 			select {
-			case <- ws.interrupt:
+			case <- ctx.Done():
 				log.Println("interrupt")
 				err := ws.Close()
 				if err != nil {
@@ -84,6 +84,11 @@ func (ws *wsClient) Close() error{
 	err := ws.client.Close()
 	if err != nil {
 		log.Println("close error:", err)
+		return err
+	}
+	err = ws.db.Close()
+	if err != nil {
+		log.Println("error closing db connection")
 		return err
 	}
 	return nil

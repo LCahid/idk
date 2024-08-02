@@ -18,6 +18,7 @@ type HttpService struct {
 type Cluster interface{
 	Join(addr, nodeId string) error
 	GetLast() (string, error)
+	Close() error
 }
 
 func NewHttpService(addr string, cluster Cluster) *HttpService {
@@ -61,6 +62,9 @@ func (h *HttpService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HttpService) Close() error {
+	if err := h.cluster.Close(); err != nil {
+		return err
+	}
 	return h.listener.Close()
 }
 

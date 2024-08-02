@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -24,11 +25,10 @@ type Cluster struct {
 }
 
 type wsClient interface {
-	Start(wg *sync.WaitGroup)
+	Start(ctx context.Context, wg *sync.WaitGroup)
 	Apply(l *raft.Log) interface{}
 	Snapshot() (raft.FSMSnapshot, error)
 	Restore(io.ReadCloser) error
-	Close() error
 }
 
 func NewCluster(raftDir, raftAddr string, client wsClient) *Cluster {
@@ -40,7 +40,7 @@ func NewCluster(raftDir, raftAddr string, client wsClient) *Cluster {
 	}
 }
 
-func (c *Cluster) Start(localId string, first bool, wg *sync.WaitGroup) error {
+func (c *Cluster) Start(localId string, first bool, ctx context.Context, wg *sync.WaitGroup) error {
 	config := raft.DefaultConfig()
 	if localId == "" {
 		config.LocalID = raft.ServerID(1)
@@ -83,17 +83,32 @@ func (c *Cluster) Start(localId string, first bool, wg *sync.WaitGroup) error {
 		}
 		c.raft.BootstrapCluster(configuration)
 	}
-	
-	go c.clientStart(wg)
+	wg.Add(1)
+	go c.clientStart(ctx, wg)
 
 	return nil
 }
 
-func (c *Cluster) clientStart(wg *sync.WaitGroup) {
+
+func (c *Cluster) Close() error {
+	err := c.raft.Shutdown().Error()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Cluster) clientStart(ctx context.Context, wg *sync.WaitGroup) {
 	for {
-		if c.raft.State() == raft.Leader{
-			c.client.Start(wg)
+		select {
+		case <-ctx.Done():
+			wg.Done()
 			return
+		default:
+			if c.raft.State() == raft.Leader{
+				c.client.Start(ctx, wg)
+				return
+			}
 		}
 	}
 }
